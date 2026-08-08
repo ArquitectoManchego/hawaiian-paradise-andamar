@@ -3,12 +3,14 @@ import {
   Sparkles, IceCream, GlassWater, CupSoda, Coffee, Utensils, Flame, Soup, Cookie,
   ShoppingCart, Trash2, Plus, Minus, Search, CreditCard, DollarSign, CheckCircle2,
   BookOpen, FileText, Lock, RefreshCw, Layers, Printer, Wifi, ShieldAlert, Award, FileSpreadsheet,
-  Package, AlertTriangle, ShoppingBag, ArrowUpRight
+  Package, AlertTriangle, ShoppingBag, ArrowUpRight, Megaphone, Tag
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { CATEGORIES, PRODUCTS } from './data/mockProducts';
+import { CATEGORIES, PRODUCTS, PROMOTIONS } from './data/mockProducts';
 import { db, initDatabase } from './db/localDb';
 import { syncLocalDataToCloud } from './services/firebaseSync';
+import MarketingModule from './components/MarketingModule';
+import MysteryShopperModule from './components/MysteryShopperModule';
 
 // Map icon strings to Lucide Components
 const ICON_MAP = {
@@ -16,10 +18,11 @@ const ICON_MAP = {
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('pos'); // pos | inventario | corte | conocimiento | documentos
+  const [activeTab, setActiveTab] = useState('pos'); // pos | inventario | corte | campanas | mystery | conocimiento | documentos
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [cart, setCart] = useState([]);
+  const [activePromo, setActivePromo] = useState(null); // Promoción seleccionada activada
   
   // Inventory state from IndexedDB
   const [inventoryList, setInventoryList] = useState([]);
@@ -98,8 +101,27 @@ export default function App() {
 
   const clearCart = () => setCart([]);
 
+  // Subtotal y Descuentos por Promoción Activa
   const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const total = subtotal;
+  
+  let discountAmount = 0;
+  if (activePromo) {
+    if (activePromo.type === 'DISCOUNT_PERCENT') {
+      discountAmount = subtotal * (activePromo.discountPercent / 100);
+    } else if (activePromo.type === '2x1') {
+      // Aplicar 2x1 en la categoría aplicable o en todo
+      const eligibleItems = cart.filter(item => !activePromo.applicableCategory || item.category === activePromo.applicableCategory);
+      const totalEligibleQty = eligibleItems.reduce((acc, i) => acc + i.quantity, 0);
+      const freePairs = Math.floor(totalEligibleQty / 2);
+      if (freePairs > 0 && eligibleItems.length > 0) {
+        // Descontar el ítem de menor precio por cada par
+        const minPrice = Math.min(...eligibleItems.map(i => i.price));
+        discountAmount = minPrice * freePairs;
+      }
+    }
+  }
+
+  const total = Math.max(0, subtotal - discountAmount);
 
   // Handle Payment completion
   const handleCompleteSale = async () => {
@@ -194,13 +216,15 @@ export default function App() {
         </div>
 
         {/* Navigation Tabs */}
-        <div style={{ display: 'flex', gap: '8px', background: 'rgba(15, 23, 42, 0.6)', padding: '6px', borderRadius: '14px', border: '1px solid var(--border-light)' }}>
+        <div style={{ display: 'flex', gap: '6px', background: 'rgba(15, 23, 42, 0.6)', padding: '6px', borderRadius: '14px', border: '1px solid var(--border-light)' }}>
           {[
-            { id: 'pos', label: 'Punto de Venta', icon: ShoppingCart },
-            { id: 'inventario', label: 'Inventario & Compras', icon: Package },
-            { id: 'corte', label: 'Corte de Caja', icon: Lock },
-            { id: 'conocimiento', label: 'Capacitación HP', icon: BookOpen },
-            { id: 'documentos', label: 'Formatos & Contratos', icon: FileText }
+            { id: 'pos', label: 'POS', icon: ShoppingCart },
+            { id: 'campanas', label: '📢 Promos HP', icon: Megaphone },
+            { id: 'inventario', label: 'Inventario', icon: Package },
+            { id: 'corte', label: 'Corte Caja', icon: Lock },
+            { id: 'mystery', label: 'Auditoría QC', icon: Award },
+            { id: 'conocimiento', label: 'Recetarios HP', icon: BookOpen },
+            { id: 'documentos', label: 'Formatos', icon: FileText }
           ].map(tab => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -210,13 +234,13 @@ export default function App() {
                 onClick={() => setActiveTab(tab.id)}
                 className="touch-btn"
                 style={{
-                  display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 18px', borderRadius: '10px',
+                  display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '10px',
                   background: isActive ? 'var(--primary-gradient)' : 'transparent',
                   color: isActive ? '#fff' : 'var(--text-muted)',
-                  fontWeight: isActive ? 700 : 500, fontSize: '0.9rem'
+                  fontWeight: isActive ? 700 : 500, fontSize: '0.85rem'
                 }}
               >
-                <Icon size={18} />
+                <Icon size={16} />
                 {tab.label}
               </button>
             );
@@ -257,13 +281,24 @@ export default function App() {
                     style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '1rem', outline: 'none', width: '100%' }}
                   />
                   {searchTerm && (
-                    <button onClick={() => setSearchTerm('')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>×</button>
-                  )}
+            {/* Left Column: Product Selection */}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '20px', overflow: 'hidden' }}>
+              
+              {/* Active Promotion Bar if any */}
+              {activePromo && (
+                <div style={{ background: 'rgba(16, 185, 129, 0.15)', border: '1px solid var(--green-emerald)', borderRadius: '12px', padding: '10px 16px', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#fff', fontSize: '0.85rem' }}>
+                    <Tag size={18} color="var(--green-emerald)" />
+                    <span><strong>Promoción Activa:</strong> {activePromo.name}</span>
+                  </div>
+                  <button onClick={() => setActivePromo(null)} style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 700 }}>
+                    Quitar Promo
+                  </button>
                 </div>
-              </div>
+              )}
 
-              {/* Categories Scrollable Pills */}
-              <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '4px' }}>
+              {/* Category Chips Bar */}
+              <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '12px', marginBottom: '16px' }}>
                 {CATEGORIES.map(cat => {
                   const Icon = ICON_MAP[cat.icon] || Sparkles;
                   const isSelected = selectedCategory === cat.id;
@@ -273,13 +308,11 @@ export default function App() {
                       onClick={() => setSelectedCategory(cat.id)}
                       className="touch-btn"
                       style={{
-                        display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 20px', borderRadius: '14px',
-                        whiteSpace: 'nowrap',
+                        display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 20px', borderRadius: '14px',
                         background: isSelected ? cat.color : 'var(--bg-card)',
                         color: isSelected ? '#000' : '#fff',
-                        fontWeight: 700, fontSize: '0.9rem',
-                        border: isSelected ? 'none' : '1px solid var(--border-light)',
-                        boxShadow: isSelected ? `0 4px 15px ${cat.color}55` : 'none'
+                        fontWeight: 800, fontSize: '0.9rem', border: '1px solid var(--border-light)',
+                        flexShrink: 0, boxShadow: isSelected ? 'var(--shadow-glow)' : 'none'
                       }}
                     >
                       <Icon size={18} />
@@ -289,17 +322,33 @@ export default function App() {
                 })}
               </div>
 
-              {/* Product Grid */}
-              <div style={{ flex: 1, overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: '16px', paddingRight: '4px' }}>
+              {/* Search Bar */}
+              <div style={{ position: 'relative', marginBottom: '16px' }}>
+                <Search size={20} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                <input
+                  type="text"
+                  placeholder="Buscar producto, sabor o insumo (ej. Chamoicano, Nutella, Crepa Hawaiiana)..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  style={{
+                    width: '100%', padding: '14px 14px 14px 48px', borderRadius: '14px',
+                    background: 'var(--bg-card)', border: '1px solid var(--border-light)',
+                    color: '#fff', fontSize: '1rem', outline: 'none'
+                  }}
+                />
+              </div>
+
+              {/* Products Grid */}
+              <div style={{ flex: 1, overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '14px', alignContent: 'start' }}>
                 {filteredProducts.map(product => (
                   <div
                     key={product.id}
                     onClick={() => addToCart(product)}
-                    className="touch-btn animate-fade-in"
+                    className="touch-btn"
                     style={{
                       background: 'var(--bg-card)',
                       borderRadius: '16px',
-                      padding: '16px',
+                      padding: '14px',
                       display: 'flex',
                       flexDirection: 'column',
                       justify: 'space-between',
@@ -308,10 +357,17 @@ export default function App() {
                       overflow: 'hidden'
                     }}
                   >
+                    {/* Real Product Image if available */}
+                    {product.image && (
+                      <div style={{ width: '100%', height: '85px', borderRadius: '10px', overflow: 'hidden', marginBottom: '10px', background: '#000' }}>
+                        <img src={product.image} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.target.style.display = 'none'; }} />
+                      </div>
+                    )}
+
                     {/* Badge */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                       <span style={{ 
-                        fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', padding: '4px 8px', borderRadius: '6px',
+                        fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', padding: '3px 8px', borderRadius: '6px',
                         background: product.isFranchise ? 'rgba(0, 242, 254, 0.15)' : product.isOwnRecipe ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 123, 0, 0.15)',
                         color: product.isFranchise ? 'var(--secondary-cyan)' : product.isOwnRecipe ? 'var(--green-emerald)' : 'var(--tropical-yellow)',
                         border: '1px solid currentColor'
@@ -321,29 +377,28 @@ export default function App() {
                     </div>
 
                     <div>
-                      <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', marginBottom: '6px', lineHeight: 1.2 }}>
+                      <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#fff', marginBottom: '4px', lineHeight: 1.2 }}>
                         {product.name}
                       </h3>
-                      <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '14px', height: '32px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '10px', height: '28px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {product.description}
                       </p>
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--tropical-yellow)', fontFamily: 'var(--font-heading)' }}>
+                      <span style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--tropical-yellow)', fontFamily: 'var(--font-heading)' }}>
                         ${product.price}
                       </span>
                       <div style={{ 
-                        width: '36px', height: '36px', borderRadius: '10px', background: 'var(--primary-gradient)', 
+                        width: '32px', height: '32px', borderRadius: '8px', background: 'var(--primary-gradient)', 
                         display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' 
                       }}>
-                        <Plus size={20} />
+                        <Plus size={18} />
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
-
             </div>
 
             {/* Right Column: Ticket / Cart Panel */}
@@ -403,10 +458,16 @@ export default function App() {
               {/* Total Breakdown & Checkout Button */}
               {cart.length > 0 && (
                 <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border-light)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '6px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '4px' }}>
                     <span>Subtotal:</span>
                     <span>${subtotal.toFixed(2)}</span>
                   </div>
+                  {discountAmount > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--green-emerald)', fontSize: '0.85rem', marginBottom: '6px' }}>
+                      <span>Descuento ({activePromo.name}):</span>
+                      <span>-${discountAmount.toFixed(2)}</span>
+                    </div>
+                  )}
                   <div style={{ display: 'flex', justifyContent: 'space-between', color: '#fff', fontSize: '1.4rem', fontWeight: 900, marginBottom: '16px' }}>
                     <span>Total a Cobrar:</span>
                     <span style={{ color: 'var(--tropical-yellow)' }}>${total.toFixed(2)}</span>
@@ -428,6 +489,16 @@ export default function App() {
 
             </div>
           </>
+        )}
+
+        {/* TAB DE CAMPAÑAS Y PROMOCIONES */}
+        {activeTab === 'campanas' && (
+          <MarketingModule activePromo={activePromo} setActivePromo={setActivePromo} />
+        )}
+
+        {/* TAB DE AUDITORÍA MYSTERY SHOPPER */}
+        {activeTab === 'mystery' && (
+          <MysteryShopperModule />
         )}
 
         {/* TAB 2: INVENTARIO & COMPRAS LIBRES EXPRESS */}
@@ -557,67 +628,212 @@ export default function App() {
 
         {/* TAB 4: BASE DE CONOCIMIENTO & REPOSITORIO DE VIDEOS */}
         {activeTab === 'conocimiento' && (
-          <div style={{ flex: 1, padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div style={{ flex: 1, padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
             <div>
-              <h2 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#fff', marginBottom: '6px' }}>Base de Conocimiento y Recetarios Hawaiian Paradise</h2>
+              <h2 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#fff', marginBottom: '6px' }}>Base de Conocimiento — Hawaiian Paradise Andamar</h2>
               <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Manuales de preparación y tutoriales en video accesibles directamente en caja para empleados.</p>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
-              {[
-                { title: 'Recetario de Productos Nuevos', type: 'PDF', desc: 'Guía paso a paso para bebidas de temporada', color: '#ff5252' },
-                { title: 'Tutorial Elaboración Crepas', type: 'VIDEO', desc: 'Video oficial de curado de crepera y doblez', color: '#ffb703' },
-                { title: 'Tutorial Elaboración Smoothie', type: 'VIDEO', desc: 'Gramajes exactos de jarabes y polvos HP', color: '#00f2fe' },
-                { title: 'Recetario de Tapioca', type: 'PDF', desc: 'Cocimiento de perlas y consistencia ideal', color: '#a855f7' }
-              ].map((item, idx) => (
-                <div key={idx} className="glass-panel" style={{ padding: '20px', borderRadius: '16px', border: '1px solid var(--border-light)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                  <div>
-                    <span style={{ fontSize: '0.65rem', fontWeight: 800, background: item.color, color: '#000', padding: '4px 8px', borderRadius: '6px' }}>{item.type}</span>
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fff', marginTop: '10px' }}>{item.title}</h3>
-                    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>{item.desc}</p>
+            {/* RECETARIOS Y MENÚS */}
+            <div>
+              <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--tropical-yellow)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>📋 Recetarios y Menús Oficiales HP</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
+                {[
+                  { title: 'Menú Raspados HP', type: 'PDF', desc: 'Naturales, De Leche, Explosivos, Light, Concentrados — precios y tamaños', color: '#00f2fe', path: '/assets/menus/menú raspados pdf (1).pdf', localPath: 'C:\\OneDrive\\HAWAIIAN PARADISE - ANEXOS CURSO\\ANEXOS PARA CURSO BASICA\\MENUS\\menú raspados pdf (1).pdf' },
+                  { title: 'Menú Smoothies & Aguas', type: 'PDF', desc: 'Todos los sabores de smoothies, aguas frescas y opción ¡Hazlo Boba!', color: '#ffb703', path: '/assets/menus/menu smothies_pdf (1).pdf', localPath: 'C:\\OneDrive\\HAWAIIAN PARADISE - ANEXOS CURSO\\ANEXOS PARA CURSO BASICA\\MENUS\\menu smothies_pdf (1).pdf' },
+                  { title: 'Menú Crepas (Crepizza)', type: 'PDF', desc: 'Dulces, saladas, especialidades y de colores', color: '#ff7b00', path: '/assets/menus/menú crepas pdf.pdf', localPath: 'C:\\OneDrive\\HAWAIIAN PARADISE - ANEXOS CURSO\\ANEXOS PARA CURSO BASICA\\MENUS\\menú crepas pdf.pdf' },
+                  { title: 'Recetario Productos Nuevos', type: 'PDF', desc: 'Frappe Nutella, Súper Explosivo, Mangada, Fresada, Raspado con Fruta', color: '#ff5252', path: '/assets/recetarios/RECETARIO DE PRODUCTOS NUEVOS.pdf', localPath: 'C:\\OneDrive\\HAWAIIAN PARADISE - ANEXOS CURSO\\ANEXOS PARA CURSO BASICA\\Archivos Varios HP\\RECETARIO DE PRODUCTOS NUEVOS.pdf' },
+                  { title: 'Recetario de Tapioca (Boba)', type: 'PDF', desc: 'Cocción paso a paso: 250g en 2L de agua, 30-40 min a fuego lento', color: '#a855f7', path: '/assets/recetarios/RECETARIO DE TAPIOCA.pdf', localPath: 'C:\\OneDrive\\HAWAIIAN PARADISE - ANEXOS CURSO\\ANEXOS PARA CURSO BASICA\\Archivos Varios HP\\RECETARIO DE TAPIOCA.pdf' },
+                ].map((item, idx) => (
+                  <div key={idx} className="glass-panel" style={{ padding: '18px', borderRadius: '16px', border: '1px solid var(--border-light)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                    <div>
+                      <span style={{ fontSize: '0.65rem', fontWeight: 800, background: item.color, color: '#000', padding: '4px 10px', borderRadius: '6px' }}>{item.type}</span>
+                      <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', marginTop: '10px' }}>{item.title}</h3>
+                      <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.5 }}>{item.desc}</p>
+                    </div>
+                    <a
+                      href={item.path}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ marginTop: '14px', display: 'block', textAlign: 'center', padding: '10px', background: 'var(--bg-card-hover)', color: '#fff', borderRadius: '8px', fontWeight: 600, textDecoration: 'none', fontSize: '0.85rem' }}
+                    >
+                      📂 Abrir PDF
+                    </a>
                   </div>
-                  <button className="touch-btn" style={{ marginTop: '16px', width: '100%', padding: '10px', background: 'var(--bg-card-hover)', color: '#fff', borderRadius: '8px', border: 'none', fontWeight: 600 }}>
-                    Abrir Archivo
-                  </button>
-                </div>
-              ))}
+                ))}
+              </div>
+            </div>
+
+            {/* VIDEOS TUTORIALES */}
+            <div>
+              <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--tropical-yellow)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>🎬 Tutoriales en Video — Curso Básico HP</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
+                {[
+                  { title: 'Tutorial Elaboración Crepas', type: 'VIDEO', desc: 'Doblez, temperatura y rellenos de crepas en la crepera', color: '#ffb703', localPath: 'C:\\OneDrive\\HAWAIIAN PARADISE - ANEXOS CURSO\\VIDEOS BASICA\\TUTORIAL ELABORACION CREPAS.avi' },
+                  { title: 'Tutorial Elaboración Smoothie', type: 'VIDEO', desc: 'Gramajes exactos de polvos HP y técnica de licuado', color: '#00f2fe', localPath: 'C:\\OneDrive\\HAWAIIAN PARADISE - ANEXOS CURSO\\VIDEOS BASICA\\TUTOTIAL ELABORACION SMOOTHIE.mov' },
+                  { title: 'Cómo Curar la Crepera', type: 'VIDEO', desc: 'Paso a paso del curado inicial de la plancha para crepas', color: '#10b981', localPath: 'C:\\OneDrive\\HAWAIIAN PARADISE - ANEXOS CURSO\\VIDEOS BASICA\\VIDEO PARA CURAR CREPERA.mp4' },
+                  { title: 'Máquina de Raspados', type: 'VIDEO', desc: 'Operación y limpieza de la máquina raspa HP', color: '#a855f7', localPath: 'C:\\OneDrive\\HAWAIIAN PARADISE - ANEXOS CURSO\\VIDEOS BASICA\\curso práctico Máquina de raspados\\2.mp4' },
+                  { title: 'Curso Práctico Raspados & Smoothies (9 videos)', type: 'VIDEO', desc: 'Serie completa de práctica: 00265–00273.MTS en carpeta del curso', color: '#ff5252', localPath: 'C:\\OneDrive\\HAWAIIAN PARADISE - ANEXOS CURSO\\VIDEOS BASICA\\curso practico  Raspados & Smoothies\\' },
+                  { title: 'Curso Práctico Crepizza (9 videos)', type: 'VIDEO', desc: 'Serie completa de práctica de crepas: 00274–00282.MTS', color: '#ff7b00', localPath: 'C:\\OneDrive\\HAWAIIAN PARADISE - ANEXOS CURSO\\VIDEOS BASICA\\curso practico Crepizza\\' },
+                ].map((item, idx) => (
+                  <div key={idx} className="glass-panel" style={{ padding: '18px', borderRadius: '16px', border: '1px solid var(--border-light)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                    <div>
+                      <span style={{ fontSize: '0.65rem', fontWeight: 800, background: item.color, color: '#000', padding: '4px 10px', borderRadius: '6px' }}>{item.type}</span>
+                      <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', marginTop: '10px' }}>{item.title}</h3>
+                      <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.5 }}>{item.desc}</p>
+                      <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '6px', fontFamily: 'monospace', wordBreak: 'break-all' }}>{item.localPath}</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (window.electronAPI?.openPath) { window.electronAPI.openPath(item.localPath); }
+                        else { alert('Ruta del archivo: ' + item.localPath + '\n\nEn la versión de escritorio (Electron) este botón abrirá el archivo directamente.'); }
+                      }}
+                      className="touch-btn"
+                      style={{ marginTop: '14px', padding: '10px', background: 'var(--bg-card-hover)', color: '#fff', borderRadius: '8px', border: 'none', fontWeight: 600, fontSize: '0.85rem' }}
+                    >
+                      🎬 Abrir Video
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* RECETAS EXTRAÍDAS — Consulta Rápida */}
+            <div>
+              <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--tropical-yellow)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>⚡ Recetas Rápidas — Consulta en Caja</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '14px' }}>
+                {[
+                  { name: 'Frappe Nutella', pasos: 'Hielo + 2 cdas Nutella + Capuccino Clásico HP → Licuar → Decorar con chocolate.' },
+                  { name: 'Súper Explosivo', pasos: 'Raspado normal en cono chico → Agregar dulces al contorno → Chamoy + Chile en polvo encima.' },
+                  { name: 'Mangada', pasos: 'Hielo + ½ taza jarabe Mango Natural HP → Licuar → Chamoy + chilito + palito de tamarindo.' },
+                  { name: 'Fresada', pasos: 'Hielo + ½ taza jarabe Fresa Natural HP → Licuar → Chamoy + chilito + palito de tamarindo.' },
+                  { name: 'Raspado con Fruta', pasos: '½ L con jarabe Natural o Explosivo → ¾ taza fruta picada (pepino, jícama, piña o mango) → Chamoy + chile.' },
+                  { name: 'Crema Chantilly', pasos: 'Por cada 1L crema Chantilly: + 5ml Vainilla + 25g Azúcar Glass.' },
+                  { name: 'Tapioca (Boba)', pasos: '2L agua hervida → Reducir calor + 250g tapioca → 30-40 min fuego lento → Reposo 35 min tapado → Enjuagar + azúcar.' },
+                ].map((rec, idx) => (
+                  <div key={idx} className="glass-panel" style={{ padding: '16px', borderRadius: '14px', border: '1px solid var(--border-light)' }}>
+                    <h4 style={{ color: 'var(--tropical-yellow)', fontWeight: 800, fontSize: '0.95rem', marginBottom: '8px' }}>🧾 {rec.name}</h4>
+                    <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>{rec.pasos}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}
 
         {/* TAB 5: FORMATOS E IMPRESIÓN DE CONTRATOS */}
         {activeTab === 'documentos' && (
-          <div style={{ flex: 1, padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div style={{ flex: 1, padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
             <div>
-              <h2 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#fff', marginBottom: '6px' }}>Módulo de Gestión Documental y Formatos HP</h2>
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Impresión rápida de formatos oficiales y contratos individuales de trabajo.</p>
+              <h2 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#fff', marginBottom: '6px' }}>Módulo de Gestión Documental — HP Andamar</h2>
+              <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Formatos oficiales de la franquicia, contratos de trabajo e impresos de operación diaria.</p>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '16px' }}>
-              {[
-                { title: 'Formato Solicitud Jarabes', icon: FileSpreadsheet, category: 'Formatos Excel Franquicia' },
-                { title: 'Existencias Franquicia Formato', icon: FileSpreadsheet, category: 'Inventario Físico' },
-                { title: 'Contrato Individual de Trabajo', icon: FileText, category: 'Recursos Humanos' },
-                { title: 'Convenio de Confidencialidad', icon: Lock, category: 'Legal / Franquicia' }
-              ].map((doc, idx) => {
-                const Icon = doc.icon;
-                return (
-                  <div key={idx} className="glass-panel" style={{ padding: '20px', borderRadius: '16px', border: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                      <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--tropical-yellow)' }}>
-                        <Icon size={20} />
+            {/* FORMATOS FRANQUICIA */}
+            <div>
+              <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--tropical-yellow)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>📊 Formatos Operativos Franquicia HP</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {[
+                  { title: 'Formato Solicitud de Jarabes HP', icon: FileSpreadsheet, category: 'Pedido de Insumos Franquicia', note: 'Pedir en múltiplos de 12 o 21 botellas (capacidad de hieleras)', localPath: 'C:\\OneDrive\\HAWAIIAN PARADISE - ANEXOS CURSO\\ANEXOS PARA CURSO BASICA\\Formatos\\FORMATO SOLICITUD JARABES.xlsx', webPath: '/assets/formatos/FORMATO SOLICITUD JARABES.xlsx' },
+                  { title: 'Existencias Franquicia — Formato Vacío', icon: FileSpreadsheet, category: 'Control de Inventario HP', note: 'Llenado diario de vasos, jarabes, smoothies, portacrepas', localPath: 'C:\\OneDrive\\HAWAIIAN PARADISE - ANEXOS CURSO\\ANEXOS PARA CURSO BASICA\\Formatos\\EXISTENCIAS FRANQUICIA FORMATO.xls', webPath: '/assets/formatos/EXISTENCIAS FRANQUICIA FORMATO.xls' },
+                  { title: 'Existencias Franquicia — Ejemplo Llenado', icon: FileSpreadsheet, category: 'Ejemplo de referencia', note: 'Muestra cómo llenar el formato de existencias (02 BASICO)', localPath: 'C:\\OneDrive\\HAWAIIAN PARADISE - ANEXOS CURSO\\ANEXOS PARA CURSO BASICA\\Formatos\\02 EXISTENCIA FRANQUICIA BASICO  EJEMPLO.xlsx', webPath: '/assets/formatos/02 EXISTENCIA FRANQUICIA BASICO  EJEMPLO.xlsx' },
+                  { title: 'Libro de Corte — Formato Vacío', icon: FileSpreadsheet, category: 'Cierre de Turno / Caja', note: 'Vasos (4/8/12/14oz), Crepas, Smoothies, Agua HP, Gastos', localPath: 'C:\\OneDrive\\HAWAIIAN PARADISE - ANEXOS CURSO\\ANEXOS PARA CURSO BASICA\\Formatos\\LIBRO DE CORTE  FORMATO.xls', webPath: '/assets/formatos/LIBRO DE CORTE  FORMATO.xls' },
+                  { title: 'Libro de Corte — Ejemplo Llenado', icon: FileSpreadsheet, category: 'Referencia de Cierre', note: 'Ejemplo real: Ventas $3,973 — Gastos $23 — Depósito $3,950', localPath: 'C:\\OneDrive\\HAWAIIAN PARADISE - ANEXOS CURSO\\ANEXOS PARA CURSO BASICA\\Formatos\\03 LIBRO DE CORTE BASICA EJEMPLO.xlsx', webPath: '/assets/formatos/03 LIBRO DE CORTE BASICA EJEMPLO.xlsx' },
+                  { title: 'Mystery Shopper — Evaluación HP', icon: Award, category: 'Auditoría y Calidad', note: '34 preguntas: Personal, Local, Producto (Raspados/Crepas/Cafés/Smoothies)', localPath: 'C:\\OneDrive\\HAWAIIAN PARADISE - ANEXOS CURSO\\ANEXOS PARA CURSO BASICA\\Formatos\\MISTERY SHOPER.xlsx', webPath: '/assets/formatos/MISTERY SHOPER.xlsx' },
+                ].map((doc, idx) => {
+                  const Icon = doc.icon;
+                  return (
+                    <div key={idx} className="glass-panel" style={{ padding: '16px 20px', borderRadius: '14px', border: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: 1, minWidth: 0 }}>
+                        <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: 'rgba(16, 185, 129, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--green-emerald)', flexShrink: 0 }}>
+                          <Icon size={22} />
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.title}</div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>{doc.category}</div>
+                          <div style={{ fontSize: '0.68rem', color: 'var(--tropical-yellow)', marginTop: '2px' }}>💡 {doc.note}</div>
+                        </div>
                       </div>
-                      <div>
-                        <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#fff' }}>{doc.title}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{doc.category}</div>
+                      <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                        <button
+                          onClick={() => {
+                            if (window.electronAPI?.openPath) { window.electronAPI.openPath(doc.localPath); }
+                            else { window.open(doc.webPath, '_blank'); }
+                          }}
+                          className="touch-btn"
+                          style={{ padding: '10px 14px', background: 'var(--bg-card-hover)', color: '#fff', borderRadius: '8px', border: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '0.8rem' }}
+                        >
+                          📂 Abrir
+                        </button>
+                        <button className="touch-btn" style={{ padding: '10px 14px', background: 'var(--primary-gradient)', color: '#fff', borderRadius: '8px', border: 'none', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '0.8rem' }}>
+                          <Printer size={14} /> Imprimir
+                        </button>
                       </div>
                     </div>
-                    <button className="touch-btn" style={{ padding: '10px 14px', background: 'var(--primary-gradient)', color: '#fff', borderRadius: '8px', border: 'none', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
-                      <Printer size={16} /> Imprimir
-                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* CONTRATOS Y RRHH */}
+            <div>
+              <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--tropical-yellow)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>📝 Contratos y Recursos Humanos</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {[
+                  { title: 'Contrato Individual de Trabajo HP', icon: FileText, category: 'Recursos Humanos', note: 'Contrato de trabajo con cláusulas de la franquicia', localPath: 'C:\\OneDrive\\HAWAIIAN PARADISE - ANEXOS CURSO\\ANEXOS PARA CURSO BASICA\\Formatos\\CONTRATO INDIVIDUAL DE TRABAJO.docx' },
+                  { title: 'Convenio de Confidencialidad HP', icon: Lock, category: 'Legal / Franquicia', note: 'Acuerdo de no divulgación para empleados y franquiciatario', localPath: 'C:\\OneDrive\\HAWAIIAN PARADISE - ANEXOS CURSO\\ANEXOS PARA CURSO BASICA\\Formatos\\CONVENIO DE CONFIDENCIALIDAD.doc' },
+                  { title: 'Horarios para Empleadas HP', icon: BookOpen, category: 'Administración de Personal', note: 'Plantilla de horarios rotación turnos semana', localPath: 'C:\\OneDrive\\HAWAIIAN PARADISE - ANEXOS CURSO\\ANEXOS PARA CURSO BASICA\\Archivos Varios HP\\07 HORARIOS PARA EMPLEADAS-HP.doc' },
+                ].map((doc, idx) => {
+                  const Icon = doc.icon;
+                  return (
+                    <div key={idx} className="glass-panel" style={{ padding: '16px 20px', borderRadius: '14px', border: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: 1, minWidth: 0 }}>
+                        <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: 'rgba(168, 85, 247, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a855f7', flexShrink: 0 }}>
+                          <Icon size={22} />
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#fff' }}>{doc.title}</div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>{doc.category}</div>
+                          <div style={{ fontSize: '0.68rem', color: 'var(--tropical-yellow)', marginTop: '2px' }}>💡 {doc.note}</div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                        <button
+                          onClick={() => {
+                            if (window.electronAPI?.openPath) { window.electronAPI.openPath(doc.localPath); }
+                            else { alert('Archivo: ' + doc.localPath + '\n\nEn Electron se abrirá automáticamente.'); }
+                          }}
+                          className="touch-btn"
+                          style={{ padding: '10px 14px', background: 'var(--bg-card-hover)', color: '#fff', borderRadius: '8px', border: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '0.8rem' }}
+                        >
+                          📂 Abrir
+                        </button>
+                        <button className="touch-btn" style={{ padding: '10px 14px', background: 'var(--primary-gradient)', color: '#fff', borderRadius: '8px', border: 'none', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '0.8rem' }}>
+                          <Printer size={14} /> Imprimir
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* GALERÍA PUBLICIDAD */}
+            <div>
+              <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--tropical-yellow)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>📸 Galería de Publicidad y Redes Sociales</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '10px' }}>
+                {['flyeGRATIS RASPA CHICA.jpg','flyer2x1 hawaiian.jpg','flyerINAUGURACION.jpg','flyer-inst hawaiian (2).jpg','Flyer Promo Lun martes.jpg','Flyer promo Mier y Jueves.jpg','RASPA2 HAWAIIAN.jpg','RASPA2 2x1.jpg'].map((img, idx) => (
+                  <div key={idx} style={{ borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--border-light)', aspectRatio: '3/4', background: 'var(--bg-card)' }}>
+                    <img
+                      src={`/assets/publicidad/${img}`}
+                      alt={img}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                      onError={e => { e.target.style.display = 'none'; }}
+                    />
                   </div>
-                );
-              })}
+                ))}
+              </div>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '10px' }}>📁 Carpeta completa: C:\OneDrive\HAWAIIAN PARADISE - ANEXOS CURSO\ANEXOS PARA CURSO BASICA\Publicidad\RGB\</p>
             </div>
           </div>
         )}
