@@ -266,21 +266,6 @@ export default function App() {
         {/* TAB 1: POS / PUNTO DE VENTA */}
         {activeTab === 'pos' && (
           <>
-            {/* Left Column: Categories + Products Catalog */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '16px', gap: '16px', overflow: 'hidden' }}>
-              
-              {/* Top Bar: Search */}
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: 'var(--bg-card)', padding: '12px 16px', borderRadius: '14px', border: '1px solid var(--border-light)' }}>
-                  <Search size={20} color="var(--text-muted)" />
-                  <input
-                    type="text"
-                    placeholder="Buscar raspado, smoothie, crepa, esquite..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '1rem', outline: 'none', width: '100%' }}
-                  />
-                  {searchTerm && (
             {/* Left Column: Product Selection */}
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '20px', overflow: 'hidden' }}>
               
