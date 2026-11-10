@@ -1,9 +1,50 @@
 import React, { useState } from 'react';
-import { Megaphone, CheckCircle, Tag, Calendar, Sparkles, Image, Flame } from 'lucide-react';
+import { Megaphone, CheckCircle, Tag, Calendar, Sparkles, Image, Flame, Plus, AlertCircle, Shield } from 'lucide-react';
 import { PROMOTIONS } from '../data/mockProducts';
 
-export default function MarketingModule({ activePromo, setActivePromo }) {
+export default function MarketingModule({ activePromo, setActivePromo, currentUser, userPermissions }) {
   const [selectedFlyer, setSelectedFlyer] = useState(null);
+  const [promoList, setPromoList] = useState(PROMOTIONS);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [newPromoForm, setNewPromoForm] = useState({
+    name: '',
+    type: 'DISCOUNT_PERCENT',
+    discountPercent: 15,
+    fixedPrice: 50,
+    applicableCategory: 'all',
+    description: '',
+    flyer: '/assets/publicidad/flyer-institucional.jpg'
+  });
+
+  const canManage = userPermissions?.canManagePromos ?? (currentUser?.role === 'administrador' || currentUser?.role === 'gerente');
+
+  const handleCreatePromo = (e) => {
+    e.preventDefault();
+    if (!newPromoForm.name.trim()) return;
+
+    const created = {
+      id: `promo-${Date.now()}`,
+      name: newPromoForm.name.trim(),
+      type: newPromoForm.type,
+      discountPercent: Number(newPromoForm.discountPercent) || 0,
+      fixedPrice: Number(newPromoForm.fixedPrice) || 0,
+      applicableCategory: newPromoForm.applicableCategory === 'all' ? null : newPromoForm.applicableCategory,
+      description: newPromoForm.description.trim() || 'Promoción especial activa en sucursal Andamar.',
+      flyer: newPromoForm.flyer
+    };
+
+    setPromoList([created, ...promoList]);
+    setIsAddModalOpen(false);
+    setNewPromoForm({
+      name: '',
+      type: 'DISCOUNT_PERCENT',
+      discountPercent: 15,
+      fixedPrice: 50,
+      applicableCategory: 'all',
+      description: '',
+      flyer: '/assets/publicidad/flyer-institucional.jpg'
+    });
+  };
 
   const flyersList = [
     { title: 'Flyer 2x1 Hawaiian', file: 'flyer2x1 hawaiian.jpg', desc: 'Promoción clásica 2x1 en raspados' },
@@ -44,12 +85,30 @@ export default function MarketingModule({ activePromo, setActivePromo }) {
 
       {/* SECTION 1: ACTIVACIÓN DE PROMOCIONES DE 1-CLIC */}
       <div>
-        <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--tropical-yellow)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Tag size={18} /> Promociones Activables con 1 Clic para la Caja Registradora
-        </h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+          <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--tropical-yellow)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Tag size={18} /> Promociones Disponibles para la Caja Registradora
+          </h3>
+          {canManage ? (
+            <button
+              onClick={() => setIsAddModalOpen(true)}
+              className="touch-btn"
+              style={{
+                display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 16px', borderRadius: '12px',
+                background: 'var(--primary-gradient)', color: '#fff', fontSize: '0.85rem', fontWeight: 800, border: 'none'
+              }}
+            >
+              <Plus size={16} /> Crear Nueva Promoción
+            </button>
+          ) : (
+            <span style={{ fontSize: '0.75rem', background: 'rgba(255, 255, 255, 0.08)', color: 'var(--text-muted)', padding: '6px 12px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Shield size={14} /> Modo Cajero (Solo Gerente puede agregar promociones)
+            </span>
+          )}
+        </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
-          {PROMOTIONS.map((promo) => {
+          {promoList.map((promo) => {
             const isActive = activePromo?.id === promo.id;
             return (
               <div
@@ -214,6 +273,100 @@ export default function MarketingModule({ activePromo, setActivePromo }) {
               alt="Flyer Promocional"
               style={{ maxHeight: '85vh', maxWidth: '85vw', display: 'block', objectFit: 'contain' }}
             />
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PARA CREAR NUEVA PROMOCIÓN (GERENTE / ADMIN) */}
+      {isAddModalOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: '20px' }}>
+          <div className="glass-panel" style={{ width: '100%', maxWidth: '480px', background: 'var(--bg-card)', borderRadius: '20px', padding: '24px', border: '1px solid var(--border-light)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#fff' }}>Crear Nueva Promoción HP</h3>
+              <button onClick={() => setIsAddModalOpen(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.4rem', cursor: 'pointer' }}>×</button>
+            </div>
+
+            <form onSubmit={handleCreatePromo} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Nombre de la Promoción</label>
+                <input
+                  type="text"
+                  placeholder="Ej. 2x1 en Raspados de Leche"
+                  value={newPromoForm.name}
+                  onChange={e => setNewPromoForm({ ...newPromoForm, name: e.target.value })}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', background: 'var(--bg-dark)', color: '#fff', border: '1px solid var(--border-light)', outline: 'none' }}
+                  required
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Tipo de Promoción</label>
+                <select
+                  value={newPromoForm.type}
+                  onChange={e => setNewPromoForm({ ...newPromoForm, type: e.target.value })}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', background: 'var(--bg-dark)', color: '#fff', border: '1px solid var(--border-light)', outline: 'none' }}
+                >
+                  <option value="DISCOUNT_PERCENT">Porcentaje de Descuento (%)</option>
+                  <option value="2x1">Promoción 2x1</option>
+                  <option value="FIXED_COMBO">Precio Fijo Combo ($)</option>
+                </select>
+              </div>
+
+              {newPromoForm.type === 'DISCOUNT_PERCENT' && (
+                <div>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Porcentaje de Descuento (%)</label>
+                  <input
+                    type="number"
+                    value={newPromoForm.discountPercent}
+                    onChange={e => setNewPromoForm({ ...newPromoForm, discountPercent: e.target.value })}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', background: 'var(--bg-dark)', color: '#fff', border: '1px solid var(--border-light)', outline: 'none' }}
+                    min="1"
+                    max="100"
+                  />
+                </div>
+              )}
+
+              {newPromoForm.type === 'FIXED_COMBO' && (
+                <div>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Precio Especial Combo ($)</label>
+                  <input
+                    type="number"
+                    value={newPromoForm.fixedPrice}
+                    onChange={e => setNewPromoForm({ ...newPromoForm, fixedPrice: e.target.value })}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', background: 'var(--bg-dark)', color: '#fff', border: '1px solid var(--border-light)', outline: 'none' }}
+                  />
+                </div>
+              )}
+
+              <div>
+                <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Descripción de la Oferta</label>
+                <textarea
+                  rows={2}
+                  placeholder="Detalles sobre días aplicables, condiciones o productos..."
+                  value={newPromoForm.description}
+                  onChange={e => setNewPromoForm({ ...newPromoForm, description: e.target.value })}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', background: 'var(--bg-dark)', color: '#fff', border: '1px solid var(--border-light)', outline: 'none', resize: 'none' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="touch-btn"
+                  style={{ flex: 1, padding: '12px', borderRadius: '10px', background: 'var(--bg-card-hover)', color: '#fff', border: '1px solid var(--border-light)', fontWeight: 700 }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="touch-btn"
+                  style={{ flex: 2, padding: '12px', borderRadius: '10px', background: 'var(--primary-gradient)', color: '#fff', border: 'none', fontWeight: 800 }}
+                >
+                  Guardar y Habilitar
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

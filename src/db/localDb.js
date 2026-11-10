@@ -9,12 +9,152 @@ db.version(1).stores({
   cashCuts:  '++id, timestamp, status'
 });
 
+db.version(2).stores({
+  users:     'id, username, role, active'
+});
+
+export const ROLE_PERMISSIONS = {
+  administrador: {
+    role: 'administrador',
+    label: 'Administrador / Creador',
+    description: 'Acceso total y configuración profunda del sistema',
+    badgeColor: '#a855f7',
+    badgeBg: 'rgba(168, 85, 247, 0.2)',
+    canSell: true,
+    canCashCut: true,
+    canViewCashCuts: true,
+    canManageInventory: true,
+    canViewInventory: true,
+    canManagePromos: true,
+    canViewPromos: true,
+    canViewRecipes: true,
+    canAudit: true,
+    canViewFormats: true,
+    canAccessEmpresario: true,
+    canManageUsers: true,
+    allowedTabs: ['pos', 'campanas', 'inventario', 'corte', 'mystery', 'conocimiento', 'documentos', 'empresario', 'usuarios'],
+    defaultTab: 'pos'
+  },
+  empresario: {
+    role: 'empresario',
+    label: 'Empresario / Dueño',
+    description: 'Análisis financiero, contabilidad, KPIs, auditorías y revisión de inventario',
+    badgeColor: '#f59e0b',
+    badgeBg: 'rgba(245, 158, 11, 0.2)',
+    canSell: false,
+    canCashCut: false,
+    canViewCashCuts: true,
+    canManageInventory: false,
+    canViewInventory: true,
+    canManagePromos: false,
+    canViewPromos: true,
+    canViewRecipes: true,
+    canAudit: true,
+    canViewFormats: true,
+    canAccessEmpresario: true,
+    canManageUsers: false,
+    allowedTabs: ['empresario', 'inventario', 'corte', 'mystery', 'documentos', 'conocimiento'],
+    defaultTab: 'empresario'
+  },
+  gerente: {
+    role: 'gerente',
+    label: 'Gerente de Sucursal',
+    description: 'Operación diaria, inventario activo, cortes de caja, ventas y promociones',
+    badgeColor: '#3b82f6',
+    badgeBg: 'rgba(59, 130, 246, 0.2)',
+    canSell: true,
+    canCashCut: true,
+    canViewCashCuts: true,
+    canManageInventory: true,
+    canViewInventory: true,
+    canManagePromos: true,
+    canViewPromos: true,
+    canViewRecipes: true,
+    canAudit: true,
+    canViewFormats: true,
+    canAccessEmpresario: false,
+    canManageUsers: false,
+    allowedTabs: ['pos', 'campanas', 'inventario', 'corte', 'mystery', 'conocimiento', 'documentos'],
+    defaultTab: 'pos'
+  },
+  cajero: {
+    role: 'cajero',
+    label: 'Cajero Operativo',
+    description: 'Ventas en POS, consulta de recetarios y visualización de promociones',
+    badgeColor: '#10b981',
+    badgeBg: 'rgba(16, 185, 129, 0.2)',
+    canSell: true,
+    canCashCut: false,
+    canViewCashCuts: false,
+    canManageInventory: false,
+    canViewInventory: false,
+    canManagePromos: false,
+    canViewPromos: true,
+    canViewRecipes: true,
+    canAudit: false,
+    canViewFormats: false,
+    canAccessEmpresario: false,
+    canManageUsers: false,
+    allowedTabs: ['pos', 'campanas', 'conocimiento'],
+    defaultTab: 'pos'
+  }
+};
+
+export const DEFAULT_USERS = [
+  {
+    id: 'user-admin',
+    name: 'Alex Manchego (Creador)',
+    username: 'admin',
+    pin: '1234',
+    password: 'admin',
+    role: 'administrador',
+    active: true,
+    avatar: '👑',
+    createdAt: '2026-08-01T00:00:00.000Z'
+  },
+  {
+    id: 'user-empresario',
+    name: 'Socio Inversionista (Dueño)',
+    username: 'empresario',
+    pin: '5678',
+    password: 'dueno',
+    role: 'empresario',
+    active: true,
+    avatar: '💼',
+    createdAt: '2026-08-01T00:00:00.000Z'
+  },
+  {
+    id: 'user-gerente',
+    name: 'Gerente General Andamar',
+    username: 'gerente',
+    pin: '9999',
+    password: 'gerente',
+    role: 'gerente',
+    active: true,
+    avatar: '📋',
+    createdAt: '2026-08-01T00:00:00.000Z'
+  },
+  {
+    id: 'user-cajero',
+    name: 'Cajero Principal Kiosco',
+    username: 'cajero',
+    pin: '0000',
+    password: 'cajero',
+    role: 'cajero',
+    active: true,
+    avatar: '🍧',
+    createdAt: '2026-08-01T00:00:00.000Z'
+  }
+];
+
 // Inventario real extraído del Excel: 02 EXISTENCIA FRANQUICIA BASICO EJEMPLO.xlsx
 // y LISTA DE PRODUCTOS NECESARIOS BASICA.xlsx
 export async function initDatabase() {
-  const count = await db.inventory.count();
-  if (count === 0) {
-    await db.inventory.bulkAdd([
+  // Inicializar inventario
+  await db.transaction('rw', db.inventory, async () => {
+    const count = await db.inventory.count();
+    if (count === 0) {
+      await db.inventory.bulkAdd([
 
       // ============================================================
       // JARABES — Franquicia HP (según FORMATO SOLICITUD JARABES)
@@ -117,4 +257,13 @@ export async function initDatabase() {
       { id: 'hielo',            name: 'Bolsas de Hielo (10kg)',               category: 'Insumos Operación', stockQuantity: 4, unit: 'bolsas',   isFranchiseItem: false, minStockAlert: 2 },
     ]);
   }
+  });
+
+  // Inicializar usuarios del sistema si la tabla está vacía
+  await db.transaction('rw', db.users, async () => {
+    const userCount = await db.users.count();
+    if (userCount === 0) {
+      await db.users.bulkAdd(DEFAULT_USERS);
+    }
+  });
 }

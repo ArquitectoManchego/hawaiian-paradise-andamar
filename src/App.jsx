@@ -3,14 +3,17 @@ import {
   Sparkles, IceCream, GlassWater, CupSoda, Coffee, Utensils, Flame, Soup, Cookie,
   ShoppingCart, Trash2, Plus, Minus, Search, CreditCard, DollarSign, CheckCircle2,
   BookOpen, FileText, Lock, RefreshCw, Layers, Printer, Wifi, ShieldAlert, Award, FileSpreadsheet,
-  Package, AlertTriangle, ShoppingBag, ArrowUpRight, Megaphone, Tag
+  Package, AlertTriangle, ShoppingBag, ArrowUpRight, Megaphone, Tag, Users, BarChart2, Shield, UserCheck
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { CATEGORIES, PRODUCTS, PROMOTIONS } from './data/mockProducts';
-import { db, initDatabase } from './db/localDb';
+import { db, initDatabase, ROLE_PERMISSIONS, DEFAULT_USERS } from './db/localDb';
 import { syncLocalDataToCloud } from './services/firebaseSync';
 import MarketingModule from './components/MarketingModule';
 import MysteryShopperModule from './components/MysteryShopperModule';
+import UserManagementModule from './components/UserManagementModule';
+import EmpresarioDashboard from './components/EmpresarioDashboard';
+import UserAuthModal from './components/UserAuthModal';
 
 // Map icon strings to Lucide Components
 const ICON_MAP = {
@@ -18,7 +21,22 @@ const ICON_MAP = {
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('pos'); // pos | inventario | corte | campanas | mystery | conocimiento | documentos
+  // User Authentication & Roles
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem('hp_current_user');
+      return saved ? JSON.parse(saved) : DEFAULT_USERS[0];
+    } catch {
+      return DEFAULT_USERS[0];
+    }
+  });
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const userPermissions = ROLE_PERMISSIONS[currentUser?.role] || ROLE_PERMISSIONS.cajero;
+
+  const [activeTab, setActiveTab] = useState(() => {
+    const perms = ROLE_PERMISSIONS[currentUser?.role] || ROLE_PERMISSIONS.cajero;
+    return perms.defaultTab || 'pos';
+  });
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [cart, setCart] = useState([]);
@@ -37,23 +55,55 @@ export default function App() {
   // Blind Cash Cut State (Corte Ciego)
   const [countedCash, setCountedCash] = useState('');
   const [cutSubmitted, setCutSubmitted] = useState(false);
+  const [historicalCuts, setHistoricalCuts] = useState([]);
 
   // Sync status
   const [syncStatus, setSyncStatus] = useState('En línea (Sincronizado)');
 
   // Clock
   const [time, setTime] = useState(new Date().toLocaleTimeString());
+
+  // Handle switching users
+  const handleSelectUser = (user) => {
+    setCurrentUser(user);
+    try {
+      localStorage.setItem('hp_current_user', JSON.stringify(user));
+    } catch (e) {
+      console.error(e);
+    }
+    const perms = ROLE_PERMISSIONS[user.role] || ROLE_PERMISSIONS.cajero;
+    if (!perms.allowedTabs.includes(activeTab)) {
+      setActiveTab(perms.defaultTab);
+    }
+  };
+
+  // Redirect if current tab is not allowed
+  useEffect(() => {
+    if (!userPermissions.allowedTabs.includes(activeTab)) {
+      setActiveTab(userPermissions.defaultTab);
+    }
+  }, [currentUser]);
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date().toLocaleTimeString()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // Initialize DB and load inventory
+  // Initialize DB, load inventory and cash cuts
+  const loadCashCuts = async () => {
+    try {
+      const cuts = await db.cashCuts.toArray();
+      setHistoricalCuts(cuts);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   useEffect(() => {
     async function loadData() {
       await initDatabase();
       const items = await db.inventory.toArray();
       setInventoryList(items);
+      await loadCashCuts();
     }
     loadData();
   }, []);
@@ -192,6 +242,31 @@ export default function App() {
     setPurchaseForm({ storeName: 'Costco', itemName: '', quantity: '', cost: '' });
   };
 
+  // Save Cash Cut (Corte de Caja)
+  const handleSaveCashCut = async () => {
+    if (!countedCash) return;
+    try {
+      const allSales = await db.sales.toArray();
+      const totalCalculated = allSales.reduce((acc, s) => acc + (Number(s.total) || 0), 0);
+      const totalCounted = Number(countedCash) || 0;
+      const difference = totalCounted - totalCalculated;
+
+      await db.cashCuts.add({
+        timestamp: new Date().toISOString(),
+        totalCalculated,
+        totalCounted,
+        difference,
+        user: currentUser?.name || 'Personal HP',
+        status: Math.abs(difference) < 0.01 ? 'Cuadrado' : difference > 0 ? 'Sobrante' : 'Faltante'
+      });
+
+      await loadCashCuts();
+      setCutSubmitted(true);
+    } catch (e) {
+      console.error('Error guardando corte de caja:', e);
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', width: '100vw', height: '100vh', backgroundColor: 'var(--bg-dark)' }}>
       
@@ -215,17 +290,19 @@ export default function App() {
           </div>
         </div>
 
-        {/* Navigation Tabs */}
-        <div style={{ display: 'flex', gap: '6px', background: 'rgba(15, 23, 42, 0.6)', padding: '6px', borderRadius: '14px', border: '1px solid var(--border-light)' }}>
+        {/* Navigation Tabs (Filtered dynamically by Role Permissions) */}
+        <div style={{ display: 'flex', gap: '6px', background: 'rgba(15, 23, 42, 0.6)', padding: '6px', borderRadius: '14px', border: '1px solid var(--border-light)', overflowX: 'auto' }}>
           {[
-            { id: 'pos', label: 'POS', icon: ShoppingCart },
-            { id: 'campanas', label: '📢 Promos HP', icon: Megaphone },
-            { id: 'inventario', label: 'Inventario', icon: Package },
-            { id: 'corte', label: 'Corte Caja', icon: Lock },
-            { id: 'mystery', label: 'Auditoría QC', icon: Award },
-            { id: 'conocimiento', label: 'Recetarios HP', icon: BookOpen },
-            { id: 'documentos', label: 'Formatos', icon: FileText }
-          ].map(tab => {
+            { id: 'pos',          label: 'POS Ventas',     icon: ShoppingCart, permKey: 'canSell' },
+            { id: 'campanas',     label: '📢 Promos',      icon: Megaphone,    permKey: 'canViewPromos' },
+            { id: 'inventario',   label: 'Inventario',     icon: Package,      permKey: 'canViewInventory' },
+            { id: 'corte',        label: 'Corte Caja',     icon: Lock,         permKey: 'canViewCashCuts' },
+            { id: 'empresario',   label: '💼 Negocio/KPIs',icon: BarChart2,    permKey: 'canAccessEmpresario' },
+            { id: 'mystery',      label: 'Auditoría QC',   icon: Award,        permKey: 'canAudit' },
+            { id: 'conocimiento', label: 'Recetarios HP',  icon: BookOpen,     permKey: 'canViewRecipes' },
+            { id: 'documentos',   label: 'Formatos',       icon: FileText,     permKey: 'canViewFormats' },
+            { id: 'usuarios',     label: '👑 Cuentas',     icon: Users,        permKey: 'canManageUsers' },
+          ].filter(tab => userPermissions[tab.permKey]).map(tab => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             return (
@@ -234,10 +311,10 @@ export default function App() {
                 onClick={() => setActiveTab(tab.id)}
                 className="touch-btn"
                 style={{
-                  display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '10px',
+                  display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', borderRadius: '10px',
                   background: isActive ? 'var(--primary-gradient)' : 'transparent',
                   color: isActive ? '#fff' : 'var(--text-muted)',
-                  fontWeight: isActive ? 700 : 500, fontSize: '0.85rem'
+                  fontWeight: isActive ? 800 : 500, fontSize: '0.82rem', whiteSpace: 'nowrap'
                 }}
               >
                 <Icon size={16} />
@@ -247,14 +324,38 @@ export default function App() {
           })}
         </div>
 
-        {/* System info & Sync badge */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(16, 185, 129, 0.15)', color: 'var(--green-emerald)', padding: '6px 12px', borderRadius: '20px', border: '1px solid rgba(16, 185, 129, 0.3)', fontSize: '0.8rem', fontWeight: 600 }}>
-            <Wifi size={14} /> Local + Firebase Sync
+        {/* User Profile Switcher Widget & Sync Badge & Clock */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          
+          {/* User Auth Switcher Widget */}
+          <div
+            onClick={() => setIsAuthModalOpen(true)}
+            className="touch-btn"
+            style={{
+              display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(15, 23, 42, 0.8)',
+              padding: '6px 14px', borderRadius: '14px', border: `1px solid ${userPermissions.badgeColor}60`,
+              cursor: 'pointer'
+            }}
+            title="Toca para cambiar de usuario o identificarte con PIN"
+          >
+            <span style={{ fontSize: '1.4rem' }}>{currentUser?.avatar || '🍧'}</span>
+            <div style={{ textAlign: 'left', lineHeight: 1.1 }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#fff', whiteSpace: 'nowrap' }}>
+                {currentUser?.name?.split(' ')[0] || 'Usuario'}
+              </div>
+              <span style={{ fontSize: '0.65rem', fontWeight: 800, color: userPermissions.badgeColor }}>
+                {userPermissions.label.split(' / ')[0]}
+              </span>
+            </div>
+            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>▾</span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(16, 185, 129, 0.15)', color: 'var(--green-emerald)', padding: '6px 12px', borderRadius: '20px', border: '1px solid rgba(16, 185, 129, 0.3)', fontSize: '0.78rem', fontWeight: 600 }}>
+            <Wifi size={14} /> En línea
           </div>
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#fff' }}>{time}</div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Turno 1 • Cajero Activo</div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Plaza Andamar</div>
           </div>
         </div>
 
@@ -478,7 +579,12 @@ export default function App() {
 
         {/* TAB DE CAMPAÑAS Y PROMOCIONES */}
         {activeTab === 'campanas' && (
-          <MarketingModule activePromo={activePromo} setActivePromo={setActivePromo} />
+          <MarketingModule 
+            activePromo={activePromo} 
+            setActivePromo={setActivePromo} 
+            currentUser={currentUser}
+            userPermissions={userPermissions}
+          />
         )}
 
         {/* TAB DE AUDITORÍA MYSTERY SHOPPER */}
@@ -495,16 +601,26 @@ export default function App() {
                 <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Gestión integrada de stock Franquicia HP e Insumos Libres (Costco, Walmart, Chedraui, Mercado).</p>
               </div>
 
-              <button
-                onClick={() => setIsExpressPurchaseOpen(true)}
-                className="touch-btn"
-                style={{
-                  padding: '12px 20px', borderRadius: '12px', background: 'var(--green-emerald)', color: '#fff',
-                  fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px', border: 'none'
-                }}
-              >
-                <ShoppingBag size={18} /> Registrar Compra Express
-              </button>
+              {userPermissions.canManageInventory ? (
+                <button
+                  onClick={() => setIsExpressPurchaseOpen(true)}
+                  className="touch-btn"
+                  style={{
+                    padding: '12px 20px', borderRadius: '12px', background: 'var(--green-emerald)', color: '#fff',
+                    fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px', border: 'none'
+                  }}
+                >
+                  <ShoppingBag size={18} /> Registrar Compra Express
+                </button>
+              ) : (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(245, 158, 11, 0.15)',
+                  color: 'var(--tropical-yellow)', padding: '10px 18px', borderRadius: '12px', border: '1px solid rgba(245, 158, 11, 0.3)',
+                  fontSize: '0.85rem', fontWeight: 700
+                }}>
+                  <Shield size={16} /> Modo Auditoría (Solo Lectura)
+                </div>
+              )}
             </div>
 
             {/* Inventory Table */}
@@ -556,58 +672,144 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 3: CORTE DE CAJA (Cierre Ciego) */}
+        {/* TAB 3: CORTE DE CAJA (Cierre Ciego & Auditoría) */}
         {activeTab === 'corte' && (
-          <div style={{ flex: 1, padding: '32px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-            <div className="glass-panel" style={{ width: '100%', maxWidth: '500px', padding: '32px', borderRadius: '24px', textAlign: 'center' }}>
-              <div style={{ width: '64px', height: '64px', borderRadius: '20px', background: 'rgba(255, 82, 82, 0.15)', color: 'var(--primary-coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px auto' }}>
-                <Lock size={32} />
-              </div>
-              <h2 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#fff', marginBottom: '8px' }}>Corte Ciego de Caja (Turno 1)</h2>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '24px' }}>
-                Cuenta el dinero físico en el cajón e ingresa el monto total. El sistema comparará contra las ventas registradas sin mostrar la diferencia en pantalla.
-              </p>
+          <div style={{ flex: 1, padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '24px', alignItems: 'center' }}>
+            
+            {/* Formulario de Corte Ciego (Solo Cajero, Gerente y Admin con permiso de corte) */}
+            {userPermissions.canCashCut ? (
+              <div className="glass-panel" style={{ width: '100%', maxWidth: '520px', padding: '32px', borderRadius: '24px', textAlign: 'center' }}>
+                <div style={{ width: '64px', height: '64px', borderRadius: '20px', background: 'rgba(255, 82, 82, 0.15)', color: 'var(--primary-coral)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px auto' }}>
+                  <Lock size={32} />
+                </div>
+                <h2 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#fff', marginBottom: '8px' }}>Corte Ciego de Caja (Turno Actual)</h2>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '24px' }}>
+                  Responsable: <strong style={{ color: '#fff' }}>{currentUser?.name}</strong> ({userPermissions.label.split(' / ')[0]}).
+                  Cuenta el dinero físico en el cajón e ingresa el monto total. El sistema comparará contra las ventas registradas.
+                </p>
 
-              {!cutSubmitted ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <div style={{ background: 'var(--bg-dark)', padding: '16px', borderRadius: '14px', border: '1px solid var(--border-light)' }}>
-                    <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>
-                      Efectivo Contado en Cajón ($)
-                    </label>
-                    <input
-                      type="number"
-                      placeholder="0.00"
-                      value={countedCash}
-                      onChange={(e) => setCountedCash(e.target.value)}
-                      style={{ background: 'transparent', border: 'none', color: 'var(--tropical-yellow)', fontSize: '2rem', fontWeight: 900, textAlign: 'center', width: '100%', outline: 'none' }}
-                    />
+                {!cutSubmitted ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div style={{ background: 'var(--bg-dark)', padding: '16px', borderRadius: '14px', border: '1px solid var(--border-light)' }}>
+                      <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>
+                        Efectivo Físico Contado en Cajón ($)
+                      </label>
+                      <input
+                        type="number"
+                        placeholder="0.00"
+                        value={countedCash}
+                        onChange={(e) => setCountedCash(e.target.value)}
+                        style={{ background: 'transparent', border: 'none', color: 'var(--tropical-yellow)', fontSize: '2rem', fontWeight: 900, textAlign: 'center', width: '100%', outline: 'none' }}
+                      />
+                    </div>
+
+                    <button
+                      onClick={handleSaveCashCut}
+                      disabled={!countedCash}
+                      className="touch-btn"
+                      style={{
+                        padding: '16px', borderRadius: '14px', background: countedCash ? 'var(--primary-gradient)' : 'var(--bg-card-hover)',
+                        color: '#fff', fontSize: '1.1rem', fontWeight: 800
+                      }}
+                    >
+                      Generar y Guardar Libro de Corte HP
+                    </button>
                   </div>
+                ) : (
+                  <div style={{ background: 'rgba(16, 185, 129, 0.15)', border: '1px solid var(--green-emerald)', padding: '20px', borderRadius: '16px', color: '#fff' }}>
+                    <CheckCircle2 size={40} color="var(--green-emerald)" style={{ margin: '0 auto 12px auto' }} />
+                    <h3 style={{ fontSize: '1.1rem', fontWeight: 800 }}>¡Corte de Caja Registrado con Éxito!</h3>
+                    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '6px' }}>
+                      El reporte fue guardado en IndexedDB para la auditoría del Empresario y sincronizado a la nube.
+                    </p>
+                    <button onClick={() => { setCutSubmitted(false); setCountedCash(''); }} style={{ marginTop: '16px', background: 'none', border: '1px solid var(--border-light)', color: '#fff', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>
+                      Realizar Otro Corte
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* Mensaje de Auditoría para Empresario (sin permiso operativo de corte) */
+              <div className="glass-panel" style={{ width: '100%', maxWidth: '800px', padding: '24px', borderRadius: '20px', border: '1px solid rgba(245, 158, 11, 0.3)', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{ width: '50px', height: '50px', borderRadius: '14px', background: 'rgba(245, 158, 11, 0.2)', color: 'var(--tropical-yellow)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Shield size={26} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff' }}>Modo Auditoría Ejecutiva — Cortes de Caja</h3>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    Como {userPermissions.label}, tienes acceso de solo lectura para auditar los cierres de caja y diferencias de efectivo reportados por cajeros y gerentes.
+                  </p>
+                </div>
+              </div>
+            )}
 
-                  <button
-                    onClick={() => setCutSubmitted(true)}
-                    disabled={!countedCash}
-                    className="touch-btn"
-                    style={{
-                      padding: '16px', borderRadius: '14px', background: countedCash ? 'var(--primary-gradient)' : 'var(--bg-card-hover)',
-                      color: '#fff', fontSize: '1.1rem', fontWeight: 800
-                    }}
-                  >
-                    Generar Libro de Corte HP
-                  </button>
+            {/* Tabla de Historial de Cortes de Caja (Auditable por Empresario, Gerente y Admin) */}
+            <div className="glass-panel" style={{ width: '100%', maxWidth: '1000px', borderRadius: '20px', padding: '24px', border: '1px solid var(--border-light)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <div>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#fff' }}>Historial y Auditoría de Cortes de Caja</h3>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Comparativa entre ventas registradas en el POS y dinero físico contado.</p>
+                </div>
+                <button onClick={loadCashCuts} className="touch-btn" style={{ padding: '8px 14px', borderRadius: '8px', background: 'var(--bg-card-hover)', color: '#fff', border: '1px solid var(--border-light)', fontSize: '0.8rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <RefreshCw size={14} /> Actualizar
+                </button>
+              </div>
+
+              {historicalCuts.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                  Aún no hay cortes de caja registrados en esta terminal.
                 </div>
               ) : (
-                <div style={{ background: 'rgba(16, 185, 129, 0.15)', border: '1px solid var(--green-emerald)', padding: '20px', borderRadius: '16px', color: '#fff' }}>
-                  <CheckCircle2 size={40} color="var(--green-emerald)" style={{ margin: '0 auto 12px auto' }} />
-                  <h3 style={{ fontSize: '1.1rem', fontWeight: 800 }}>¡Corte de Caja Registrado con Éxito!</h3>
-                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '6px' }}>
-                    El reporte fue guardado localmente en IndexedDB y enviado a Firebase.
-                  </p>
-                  <button onClick={() => { setCutSubmitted(false); setCountedCash(''); }} style={{ marginTop: '16px', background: 'none', border: '1px solid var(--border-light)', color: '#fff', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer' }}>
-                    Realizar Otro Corte
-                  </button>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border-light)', color: 'var(--text-muted)', textTransform: 'uppercase', fontSize: '0.72rem' }}>
+                        <th style={{ padding: '12px' }}>Fecha / Hora</th>
+                        <th style={{ padding: '12px' }}>Responsable</th>
+                        <th style={{ padding: '12px' }}>Venta Teórica (POS)</th>
+                        <th style={{ padding: '12px' }}>Efectivo Físico</th>
+                        <th style={{ padding: '12px' }}>Diferencia</th>
+                        <th style={{ padding: '12px' }}>Estatus</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {historicalCuts.slice().reverse().map((cut, idx) => {
+                        const diff = Number(cut.difference) || 0;
+                        return (
+                          <tr key={idx} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                            <td style={{ padding: '12px', color: '#fff' }}>
+                              {new Date(cut.timestamp).toLocaleDateString()} {new Date(cut.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </td>
+                            <td style={{ padding: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                              {cut.user || 'Personal HP'}
+                            </td>
+                            <td style={{ padding: '12px', color: 'var(--tropical-yellow)', fontWeight: 700 }}>
+                              ${Number(cut.totalCalculated || 0).toFixed(2)}
+                            </td>
+                            <td style={{ padding: '12px', color: '#fff', fontWeight: 700 }}>
+                              ${Number(cut.totalCounted || 0).toFixed(2)}
+                            </td>
+                            <td style={{ padding: '12px', fontWeight: 800, color: Math.abs(diff) < 0.01 ? 'var(--green-emerald)' : diff > 0 ? 'var(--tropical-yellow)' : '#ef4444' }}>
+                              {diff >= 0 ? `+$${diff.toFixed(2)}` : `-$${Math.abs(diff).toFixed(2)}`}
+                            </td>
+                            <td style={{ padding: '12px' }}>
+                              <span style={{
+                                fontSize: '0.72rem', padding: '3px 8px', borderRadius: '6px', fontWeight: 800,
+                                background: Math.abs(diff) < 0.01 ? 'rgba(16, 185, 129, 0.15)' : diff > 0 ? 'rgba(245, 158, 11, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                color: Math.abs(diff) < 0.01 ? 'var(--green-emerald)' : diff > 0 ? 'var(--tropical-yellow)' : '#ef4444'
+                              }}>
+                                {cut.status || (Math.abs(diff) < 0.01 ? 'Cuadrado' : diff > 0 ? 'Sobrante' : 'Faltante')}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>
+
           </div>
         )}
 
@@ -823,6 +1025,16 @@ export default function App() {
           </div>
         )}
 
+        {/* TAB: PANEL EMPRESARIO / FINANZAS & KPIS */}
+        {activeTab === 'empresario' && userPermissions.canAccessEmpresario && (
+          <EmpresarioDashboard currentUser={currentUser} />
+        )}
+
+        {/* TAB: GESTIÓN DE USUARIOS Y ROLES */}
+        {activeTab === 'usuarios' && userPermissions.canManageUsers && (
+          <UserManagementModule currentUser={currentUser} />
+        )}
+
       </div>
 
       {/* EXPRESS PURCHASE MODAL */}
@@ -948,6 +1160,14 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* USER AUTHENTICATION / PIN PAD MODAL */}
+      <UserAuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onSelectUser={handleSelectUser}
+        currentUser={currentUser}
+      />
 
     </div>
   );
